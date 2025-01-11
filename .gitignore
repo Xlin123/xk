@@ -1,0 +1,44 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.env
+*.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.egg
+*.egg-info/
+dist/
+build/
+*.log
+
+# Flask
+instance/
+.webassets-cache
+
+# React
+node_modules/
+npm-debug.log
+yarn-error.log
+yarn-debug.log
+build/
+.DS_Store
+
+# General
+*.swp
+*.swo
+.idea/
+.vscode/
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+#secrets
+
+cert.pem
+key.pem
+credentials.json
