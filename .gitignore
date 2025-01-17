@@ -25,7 +25,7 @@ node_modules/
 npm-debug.log
 yarn-error.log
 yarn-debug.log
-build/
+package-lock.json
 .DS_Store
 
 # General
@@ -42,3 +42,4 @@ build/
 cert.pem
 key.pem
 credentials.json
+token.json

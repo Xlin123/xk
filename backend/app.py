@@ -1,104 +1,60 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import os
+import requests
+import google_auth_oauthlib
+from sys import argv
+from flask import Flask, jsonify, redirect, request, session, url_for
+from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
+from oauth2client import client
 from google_auth_oauthlib.flow import InstalledAppFlow
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
-import pickle
-
-
-
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/": {"origins": "http://localhost:3000"}})
+app.config['CORS_HEADERS'] = 'Content-Type'
 load_dotenv()
-
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
-ALLOWED_EMAILS = os.getenv('ALLOWED_EMAILS').split(',')
+SCOPES = ['https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events.owned https://www.googleapis.com/auth/calendar.freebusy	']
 MERGED_CAL = os.getenv('MERGED_CAL')
+XAVIER_CAL = os.getenv('XAVIER_CAL')
+KAITLYN_CAL = os.getenv('KAITLYN_CAL')
+CLIENT_SECRETS_FILE = "credentials.json"
+SCOPES = ['https://www.googleapis.com/auth/calendar.events.owned',
+          'https://www.googleapis.com/auth/calendar.readonly']
+API_SERVICE_NAME = 'calendar'
+API_VERSION = 'v3'
 
-@app.route('/authorize', methods=['GET'])
-def authorize():
-    flow = InstalledAppFlow.from_client_secrets_file(
-        'credentials.json', SCOPES,
-        redirect_uri='https://localhost:5000/oauth-callback'  # Update this for production
-    )
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true'
-    )
-    return jsonify({"auth_url": authorization_url})
+app = Flask(__name__)
+def auth():
+	creds = None
+	if os.path.exists("token.json"):
+		creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+	# If there are no (valid) credentials available, let the user log in.
+	if not creds or not creds.valid:
+		if creds and creds.expired and creds.refresh_token:
+			creds.refresh(Request())
+		else:
+			flow = InstalledAppFlow.from_client_secrets_file(
+				"credentials.json", SCOPES
+			)
+			creds = flow.run_local_server(port=34658)
+		# Save the credentials for the next run
+		with open("token.json", "w") as token:
+			token.write(creds.to_json())
 
-@app.route('/oauth-callback', methods=['GET'])
-def oauth_callback():
+	return creds
+
+@app.route('/get-events', methods=['GET'])
+@cross_origin()
+def get_all_events():
     try:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            'credentials.json', SCOPES,
-            redirect_uri='https://localhost:5000/oauth-callback'
-        )
-
-        authorization_response = request.url 
-        print(f"Authorization response: {authorization_response}")
-        flow.fetch_token(authorization_response=authorization_response)
-
-        creds = flow.credentials
-        user_info_service = build('oauth2', 'v2', credentials=creds)
-        user_info = user_info_service.userinfo().get().execute()
-        user_email = user_info.get('email')
-
-        # Save credentials per user
-        token_path = f'tokens/{user_email}.pickle'
-        with open(token_path, 'wb') as token:
-            pickle.dump(creds, token)
-
-        return jsonify({"message": "Authorization successful.", "userEmail": user_email})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route('/check-auth', methods=['GET'])
-def check_auth():
-    user_email = request.args.get('userEmail')
-    token_path = f'tokens/{user_email}.pickle'
-
-    if os.path.exists(token_path):
-        return jsonify({"authenticated": True})
-    else:
-        return jsonify({"authenticated": False}), 401
-
-@app.route('/get-events', methods=['POST'])
-def get_events():
-    try:
-        user_email = request.json.get('userEmail')
-
-        if user_email not in ALLOWED_EMAILS:
-            app.logger.warning(f"Unauthorized access attempt by {user_email}")
-            return jsonify({"error": "Unauthorized user"}), 403
-
-        token_path = f'tokens/{user_email}.pickle'
-        if not os.path.exists(token_path):
-            return jsonify({"error": "User not authenticated"}), 401
-
-        with open(token_path, 'rb') as token_file:
-            creds = pickle.load(token_file)
-
-        service = build('calendar', 'v3', credentials=creds)
-
-        body = request.json
-        calendar_id = body.get("calendarId")
-        time_min = body.get("timeMin")
-        time_max = body.get("timeMax")
-
-        events_result = service.events().list(
-            calendarId=calendar_id,
-            timeMin=time_min,
-            timeMax=time_max,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-
-        events = events_result.get('items', [])
+        creds = auth()
+        service = build(API_SERVICE_NAME, API_VERSION, credentials=creds)
+        kaitlyn_cal = service.events().list(calendarId=KAITLYN_CAL).execute()
+        xavier_cal = service.events().list(calendarId=XAVIER_CAL).execute()
+        events = xavier_cal['items'] + kaitlyn_cal['items']
+        events = [event for event in events if event.get('status') != 'cancelled']
         return jsonify(events)
 
     except Exception as e:
